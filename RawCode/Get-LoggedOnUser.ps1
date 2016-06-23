@@ -97,4 +97,7 @@
     }
 }
 
-$d = Get-LoggedOnUser -ComputerName WGPQA3-CRM.stratuslivedemo.com -UserName Administrator,Bob.Smith -Verbose
+Get-LoggedOnUser -ComputerName jeffb-crm03.stratuslivedemo.com   -Verbose | foreach {
+    $_
+    Logoff /Server:$($_.ComputerName) $_.ID
+}
