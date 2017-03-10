@@ -5,6 +5,15 @@
     .Description
         Following WSUS best practice, the clean up wizard should be run periodically.  Also a SQL reindex should be perfromed after the clean up.  This script automates these steps
 
+    .Parameter ComputerName
+        WSUS Server Name.
+
+    .Parameter SQLServer
+        Name of the SQL server that hosts the SUSDB
+
+    .Parameter Port
+        WSUS port
+
     .Links
         https://blogs.technet.microsoft.com/configurationmgr/2016/01/26/the-complete-guide-to-microsoft-wsus-and-configuration-manager-sup-maintenance/
 
@@ -190,4 +199,4 @@ $ReindexLog = invoke-Command -ComputerName RWVA-SQL -ScriptBlock {
 # ----- Write To Log
 
 
-Write-EventLog -LogName Application -Source WSUSCleanup -EventID 9999 -EntryType Information -Message "WSUSCleanup has Completed : `n`n`n$CleanupLog`n`n`n$ReindexLog"
+Write-EventLog -LogName Application -Source WSUSCleanup -EventID 9999 -EntryType Information -Message "WSUSCleanup has Completed : `n`n`n$($CleanupLog | Out-String)`n`n`n$($ReindexLog | Out-String)"
