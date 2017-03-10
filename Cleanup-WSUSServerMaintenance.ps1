@@ -188,10 +188,10 @@ GO
 
 # ----- Because I don't feel like installing SSMS on this server just so I can have the SQLPS module, I will run the reindex remotely from the SQL Server
 
-$ReindexLog = invoke-Command -ComputerName RWVA-SQL -ScriptBlock {
+$ReindexLog = invoke-Command -ComputerName $SQLServer -ScriptBlock {
 
     $Location = Get-Location
-    import-module 'C:\Program Files (x86)\Microsoft SQL Server\110\Tools\PowerShell\Modules\SQLPS\sqlps' -disablenamechecking
+    import-module sqlps -disablenamechecking
     #Redirect verbose to output stream
     invoke-sqlcmd -serverInstance $Using:SQLServer -query $Using:Reindex -Verbose 4>&1
 }
