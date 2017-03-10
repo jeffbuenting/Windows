@@ -52,3 +52,4 @@
     }
 }
 
+$H = Get-DotNetHotfix  -verbose 4>&1

@@ -44,7 +44,7 @@ Describe "Get-DotNetHotfix" {
     }
 
     Context "Execution" {
-        It "does something useful" {
+        It "Returns a Custom Object" {
             $Hotfix = Get-DotNetHotfix 
             $HotFix | Should BeofType PSCustomobject
         }
