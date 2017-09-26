@@ -404,7 +404,71 @@ Function Get-LoggedOnUser {
 }
 
 #--------------------------------------------------------------------------------
+# Sessions
 #--------------------------------------------------------------------------------
+
+Function Get-Session {
+
+<#
+    .Synopsis
+        Returns the sessions on a computer
+
+    .Description
+        Returns a list of sessions on a computer.
+
+    .Parameter ComputerName
+        Name of the computer that we want to get a list of sessions.
+
+    .Example
+        Get a list of sessions from the remote server ServerA
+
+        Get-Session -ComputerName ServerA
+
+    .Link
+        https://social.technet.microsoft.com/Forums/scriptcenter/en-US/62230523-b3ff-49b1-a59e-6a3325f2339c/qwinsta-other-ways-to-enumerate-rdp-sessions-powershell-and-custom-objects?forum=ITCG
+
+    .Notes
+        Author : Jeff BUenting
+        Date : 2017 SEP 26
+
+#>
+
+    [CmdletBinding()]
+    Param (
+        [Parameter( ValueFromPipeline= $True ) ]
+        [String[]]$ComputerName = $env:COMPUTERNAME
+    )
+        
+    Process {
+        Foreach ( $C in $ComputerName ) {
+            Write-Verbose "Getting Sessions on $C"
+
+            $Results = qwinsta /server:$Computer
+
+            # ----- Separate headers from results
+            $Headers = ($Results[0].trim(" ") -replace ("\b *\B")).split(" ")
+            $Results = $Results[1..$($Results.Count - 1)]
+
+            $RDPArray = @()
+		    foreach ($Result in $Results) {
+			    $RDPMember = New-Object Object
+			    Add-Member -InputObject $RDPMember -MemberType NoteProperty -Name $Headers[0] -Value $Result.Substring(1,18).Trim()
+                Add-Member -InputObject $RDPMember -MemberType NoteProperty -Name $Headers[1] -Value $Result.Substring(19,22).Trim()
+			    Add-Member -InputObject $RDPMember -MemberType NoteProperty -Name $Headers[2] -Value $Result.Substring(41,7).Trim()
+			    Add-Member -InputObject $RDPMember -MemberType NoteProperty -Name $Headers[3] -Value $Result.Substring(48,8).Trim()
+			    Add-Member -InputObject $RDPMember -MemberType NoteProperty -Name $Headers[4] -Value $Result.Substring(56,12).Trim()
+				Add-Member -InputObject $RDPMember -MemberType NoteProperty -Name $Headers[5] -Value $Result.Substring(68,8).Trim()
+			    
+			    $RDPArray += $RDPMember
+		    }
+
+
+            Write-Output $RDPArray
+        }
+    }
+
+}
+
 #--------------------------------------------------------------------------------
 #--------------------------------------------------------------------------------
 #--------------------------------------------------------------------------------
