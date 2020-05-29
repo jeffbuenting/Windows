@@ -27,6 +27,9 @@ Else {
 #$ServerAdmin = Get-Credential -Message "Server Admin"
 
 
+    $VM = Get-VM -Name $VMName
+
+
 
 # ----- Because we don't know if the VCSA is using self signed certs or not.
 Set-PowerCLIConfiguration -InvalidCertificateAction Ignore -Confirm:$False
@@ -93,12 +96,15 @@ foreach ($VMName in $ServerNames ) {
 
     # ----- VM must be Powered off to change boot order
     Write-Log -Path "$LogPath\$($VMName).log"  -Message "Shutting down the VM" -Verbose:$IsVerbose
+
     Shutdown-VMGuest -VM $VM -Confirm:$False
 
     $VM = Get-VM -Name $VMName
 
     # ----- Wait for VM to be powered off.
+
     Write-Log -Path "$LogPath\$($VMName).log"  -Message "Waiting until the VM is in a PoweredOff State prior to changing boot order" -Verbose:$IsVerbose
+
     while ( $VM.PowerState -ne 'PoweredOff' ) {
         Start-Sleep -s 5
         Write-Output "Powerstate = $($VM.Powerstate)"
@@ -106,6 +112,7 @@ foreach ($VMName in $ServerNames ) {
     }
 
     # ----- Configure VM to Boot from WINPEUIFIConvertion ISO
+
         Write-Log -Path "$LogPath\$($VMName).log"  -Message "Setting CDRom as only boot option" -Verbose:$IsVerbose
 
         # ----- Capture info needed to register vm
@@ -172,6 +179,7 @@ foreach ($VMName in $ServerNames ) {
         $VM = Get-VM -Name $VMName
     }
 
+
     # ----- Check log file for success
     if ( -Not ( Get-Content -Path "$LogPath\$($VMName).log" | Select-String "Success : Conversion Complete" ) ) {
         Write-Log -Path "$LogPath\$($VMName).log" -Throw  -Message "MBR2GPT on $VMName did not complete successfully.  Restore the Snapshot" -Verbose:$IsVerbose
@@ -179,6 +187,7 @@ foreach ($VMName in $ServerNames ) {
 
     # ----- Set BIOS mode to UEFI
     Write-Log -Path "$LogPath\$($VMName).log"  -Message "Setting VM Options to EFI" -Verbose:$IsVerbose
+
 
     $spec = New-Object VMware.Vim.VirtualMachineConfigSpec
     $spec.Firmware = [VMware.Vim.GuestOsDescriptorFirmwareType]::efi
@@ -287,6 +296,7 @@ foreach ($VMName in $ServerNames ) {
 
 
 Disconnect-VIServer -Confirm:$False
+
 
 #
 ## ----- Remove the snapshot?
