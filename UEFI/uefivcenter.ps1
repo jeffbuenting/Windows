@@ -4,12 +4,13 @@
 
 
 $LogPath = '\\192.168.1.166\source'       #'\\10.137.8.9\UEFIConvertLogs'
-$ISO = '[LocalHDD] ISO/WINPE_UEFI.iso'      #"[ISO] Utilitiy/WINPE_UEFI.iso"
+$ISO = '[LocalHDD] ISO/Windows/WINPE_UEFI.iso'      #"[ISO] Utilitiy/WINPE_UEFI.iso"
 $Key = (3,4,2,3,56,34,254,222,1,1,2,23,42,54,33,233,1,34,2,7,6,5,35,43)
 $VCenter = '192.168.1.16'            #    'CDF2-VCA-01'
 
 # ----- Dot source write-log
 . $PSScriptRoot\write-log.ps1
+. C:\Scripts\Windows\UEFI\Write-Log.ps1
 
 # ----- Set IsVerbose
 if ( $VerbosePreference -eq 'Continue' ) {
@@ -20,9 +21,9 @@ Else {
 }
 
 #$Cred = Get-Credential
-$VcenterCred = Get-Credential -Message "vCenter User"
-$ShareCred = Get-Credential -Message "User with access to shared drive for logs"
-$ServerAdmin = Get-Credential -Message "Server Admin"
+#$VcenterCred = Get-Credential -Message "vCenter User"
+#$ShareCred = Get-Credential -Message "User with access to shared drive for logs"
+#$ServerAdmin = Get-Credential -Message "Server Admin"
 
 
 
@@ -80,7 +81,7 @@ foreach ($VMName in $ServerNames ) {
 
     Try {   
         Write-Log -Path "$LogPath\$($VMName).log" -Message "Mounting WINPE" -Verbose:$IsVerbose
-        Get-CDDrive -VM $VM -ErrorAction Stop | Set-CDDrive -NoMedia -Confirm:$False -ErrorAction Stop
+     #   Get-CDDrive -VM $VM -ErrorAction Stop | Set-CDDrive -NoMedia -Confirm:$False -ErrorAction Stop
 
         Get-CDDrive -vm $VM -ErrorAction Stop | Set-CDDrive -IsoPath $ISO -StartConnected:$True -Connected:$True -Confirm:$False -ErrorAction Stop
     }
