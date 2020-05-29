@@ -42,7 +42,7 @@
         [Parameter(ParameterSetName = 'Error')]
         [String]$Path,
 
-        [Parameter (Mandatory = $True,Position = 1)]
+        [Parameter (Mandatory = $True,Position = 1,ValueFromPipeline = $True)]
         [Parameter(ParameterSetName = 'Info')]
         [Parameter(ParameterSetName = 'Warning')]
         [Parameter(ParameterSetName = 'Error')]
@@ -56,33 +56,37 @@
         [Switch]$Throw
     )
 
-    if ( -Not ( Test-path -Path $Path ) ) { New-Item -ItemType File -Path $Path | Out-Null }
+    Begin {
+        if ( -Not ( Test-path -Path $Path ) ) { New-Item -ItemType File -Path $Path | Out-Null }
 
-    $Date = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-
-    $MsgType = 'Info   '
-        
-    $Txt = "$Date  -  $MsgType -  $Message"
-
-    if ( $VerbosePreference -eq 'Continue' -and -not $Warning -and -not $Throw ) {
-        Write-Verbose $TXT
+        $Date = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     }
 
-    if ( $Warning ) {
-        $MsgType = 'Warning'
+    Process {
+        $MsgType = 'Info   '
         
-        $TXT = "$Date  -  $MsgType -  $Message"
+        $Txt = "$Date - $MsgType - $Message"
 
-        Write-Warning $TXT
-    }
+        if ( $VerbosePreference -eq 'Continue' -and -not $Warning -and -not $Throw ) {
+            Write-Verbose $TXT
+        }
 
-     if ( $Throw ) {
-        $MsgType = 'Error  '
+        if ( $Warning ) {
+            $MsgType = 'Warning'
         
-        $Txt = "$Date  -  $MsgType -  $Message"
+            $TXT = "$Date - $MsgType - $Message"
+
+            Write-Warning $TXT
+        }
+
+         if ( $Throw ) {
+            $MsgType = 'Error  '
+        
+            $Txt = "$Date - $MsgType - $Message"
+        }
+
+        Out-File -FilePath $Path -InputObject $TXT -Append
+
+        if ( $Throw ) { Throw $Txt }
     }
-
-    Out-File -FilePath $Path -InputObject $TXT -Append
-
-    if ( $Throw ) { Throw $Txt }
 }
