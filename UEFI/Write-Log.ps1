@@ -11,9 +11,9 @@
         Full path including name to the log file.
 
     .PARAMETER MESSAGE
-        Info message to write to log.
+        Info message to write to log.  Custom object to accept any type of data.
 
-    .PARAMETER Warning
+    .PARAMETER Warning  
         changes the message type to warning.
 
     .PARAMETER Throw
@@ -46,7 +46,7 @@
         [Parameter(ParameterSetName = 'Info')]
         [Parameter(ParameterSetName = 'Warning')]
         [Parameter(ParameterSetName = 'Error')]
-        [String]$Message,
+        [PSObject]$Message,
 
         [Parameter(ParameterSetName = 'Warning')]
         [Switch]$Warning,
@@ -60,12 +60,19 @@
         if ( -Not ( Test-path -Path $Path ) ) { New-Item -ItemType File -Path $Path | Out-Null }
 
         $Date = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+
+        $M = @()
     }
 
     Process {
+        # ----- Gather the Message from the pipeline
+        $M += $Message
+    }
+
+    End {
         $MsgType = 'Info   '
         
-        $Txt = "$Date - $MsgType - $Message"
+        $Txt = ("$Date - $MsgType - $($M | Out-String)").TrimEnd()
 
         if ( $VerbosePreference -eq 'Continue' -and -not $Warning -and -not $Throw ) {
             Write-Verbose $TXT
@@ -74,7 +81,7 @@
         if ( $Warning ) {
             $MsgType = 'Warning'
         
-            $TXT = "$Date - $MsgType - $Message"
+            $TXT = ("$Date - $MsgType - $($M | Out-String)").TrimEnd()
 
             Write-Warning $TXT
         }
@@ -82,10 +89,14 @@
          if ( $Throw ) {
             $MsgType = 'Error  '
         
-            $Txt = "$Date - $MsgType - $Message"
+            $Txt = ("$Date - $MsgType - $($M | Out-String)").TrimEnd()
         }
 
+        $TXT = $TXT.Replace("'n",'xx')
+
         Out-File -FilePath $Path -InputObject $TXT -Append
+
+ #      Write-Output $TXT
 
         if ( $Throw ) { Throw $Txt }
     }
