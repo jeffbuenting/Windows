@@ -4,13 +4,21 @@
 
 
 $LogPath = 'c:\temp'       #'\\10.137.8.9\UEFIConvertLogs'
+$LogPath = '\\192.168.1.166\source'
 $ISO = '[LocalHDD] ISO/Windows/WINPE_UEFI.iso'      #"[ISO] Utilitiy/WINPE_UEFI.iso"
 $Key = (3,4,2,3,56,34,254,222,1,1,2,23,42,54,33,233,1,34,2,7,6,5,35,43)
 $VCenter = '192.168.1.16'            #    'CDF2-VCA-01'
 
+
+
 # ----- Dot source write-log
 . $PSScriptRoot\write-log.ps1
 #. C:\Scripts\Windows\UEFI\Write-Log.ps1
+
+# ----- Turn on Verbose.
+$OldVerbosePref = $VerbosePreference
+$VerbosePreference = 'Continue'
+
 
 # ----- Set IsVerbose
 if ( $VerbosePreference -eq 'Continue' ) {
@@ -21,9 +29,9 @@ Else {
 }
 
 #$Cred = Get-Credential
-$VcenterCred = Get-Credential -Message "vCenter User"
-$ShareCred = Get-Credential -Message "User with access to shared drive for logs"
-$ServerAdmin = Get-Credential -Message "Server Admin"
+#$VcenterCred = Get-Credential -Message "vCenter User"
+#$ShareCred = Get-Credential -Message "User with access to shared drive for logs"
+#$ServerAdmin = Get-Credential -Message "Server Admin"
 
 
 Try {
@@ -96,81 +104,13 @@ foreach ($VMName in $ServerNames ) {
         Write-Log -Path "$LogPath\$($VMName).log" -Throw -Message "Problem mounting WINPE ISO.`n`n     $ExceptionMessage`n`n $ExceptionType" -Verbose:$IsVerbose
     }
 
-#    # ----- VM must be Powered off to change boot order
-#    Write-Log -Path "$LogPath\$($VMName).log"  -Message "Shutting down the VM" -Verbose:$IsVerbose
-#    Shutdown-VMGuest -VM $VM -Confirm:$False
-#
-#    $VM = Get-VM -Name $VMName
-#
-#    # ----- Wait for VM to be powered off.
-#    Write-Log -Path "$LogPath\$($VMName).log"  -Message "Waiting until the VM is in a PoweredOff State prior to changing boot order" -Verbose:$IsVerbose
-#    while ( $VM.PowerState -ne 'PoweredOff' ) {
-#        Start-Sleep -s 5
-#        Write-Output "Powerstate = $($VM.Powerstate)"
-#        $VM = Get-VM -Name $VMName
-#    }
-#
-#    # ----- Configure VM to Boot from WINPEUIFIConvertion ISO
-#        Write-Log -Path "$LogPath\$($VMName).log"  -Message "Setting CDRom as only boot option" -Verbose:$IsVerbose
-#
-#        # ----- Capture info needed to register vm
-#        $VMXPath = $VM.ExtensionData.Config.Files.VmPathName
-#        $Folder = $VM.Folder
-#        if ( $($VM.ResourcePool) ) {
-#            $ResourcePool = $VM.ResourcePool
-#        }
-#        Else {
-#            $ResourcePool = (Get-Cluster -VM $VM).Name
-#        }
-#
-#
-#        # ----- Set CDROM as first boot
-#        $spec = New-Object VMware.Vim.VirtualMachineConfigSpec
-#
-#        $BootOptions = New-Object VMware.Vim.VirtualMachineBootOptions
-#
-#        $BootableCDRom = New-Object -Type VMware.Vim.VirtualMachineBootOptionsBootableCdromDevice
-#
-#        #$HDiskDeviceName = "Hard disk 1"
-#        #$HDiskDeviceKey = ($vm.ExtensionData.Config.Hardware.Device | ?{$_.DeviceInfo.Label -eq $HDiskDeviceName}).Key
-#        #$BootableHDisk = New-Object -TypeName VMware.Vim.VirtualMachineBootOptionsBootableDiskDevice -Property @{"DeviceKey" = $HDiskDeviceKey}
-#
-#        $BootOrder = $BootableCDRom
-#
-#        $BootOptions.BootOrder = $BootOrder
-#
-#        $Spec.BootOptions = $BootOptions
-#
-#        $VM.ExtensionData.reconfigvm( $Spec )
-#
-#        # ----- Remove and Reregister so VMX changes happen
-#        Remove-Inventory -Item $VM -Confirm:$False
-#
-#        # ----- Register VM (use clustername as the default resourcepool)
-#        $VM = New-VM -VMFilePath $VMXPath -Location $Folder -ResourcePool $ResourcePool
-#
-#
-#
-#
-#
-#
-#        #    $spec = New-Object VMware.Vim.VirtualMachineConfigSpec 
-#        #    $Spec.BootOPtions = New-Object VMware.Vim.VirtualMachineBootOptions 
-#        #    $SPec.BootOptions.BootOrder = New-Object -Type VMware.Vim.VirtualMachineBootOptionsBootableCdromDevice
-#        #
-#        #    ## reconfig the VM to use the spec with the new BootOrder
-#        #    $vm.ExtensionData.ReconfigVM_Task($spec)
-#
-#    # ----- so I am having problem imediately starting the VM.  So pausing for x Seconds
-#    Start-Sleep -Seconds 30
-#
-#    Write-Log -Path "$LogPath\$($VMName).log"  -Message "Booting to WINPE to performing the magic" -Verbose:$IsVerbose
-#    Start-VM -vm $VM 
+
 
     # ----- Restart and boot to ISO
     Write-Log -Path "$LogPath\$($VMName).log"  -Message "Restarting VM." -Verbose:$IsVerbose
 
-    Restart-VMGuest -VM $VM 
+    # ----- Restarting VM OS.  I can't figure out how to monitor when a reboot is complete (without vmtools) so I separated this into two operations
+    Shutdown-VMGuest -VM $VM -Confirm:$False
 
     $VM = Get-vm -name $VMName
 
@@ -182,8 +122,18 @@ foreach ($VMName in $ServerNames ) {
         $VM = Get-VM -Name $VMName
     }
 
+    Start-Sleep -s 30
+
+    Write-Log -Path "$LogPath\$($VMName).log"  -Message "Starting VM." -Verbose:$IsVerbose
+    Start-VM -VM $VM
+
     # ----- restart VM to poweron.
     Write-Log -Path "$LogPath\$($VMName).log"  -Message "Waiting to VM to poweron" -Verbose:$IsVerbose
+
+    $VM = Get-vm -name $VMName
+
+    $VM.Guest | FL *
+
     while ( $VM.PowerState -ne 'PoweredOn' ) {
         Start-Sleep -s 5
         Write-Output "Powerstate = $($VM.Powerstate)"
@@ -191,11 +141,13 @@ foreach ($VMName in $ServerNames ) {
     }
 
     # ----- Check if VMTools installed.
+    Write-Log -Path "$LogPath\$($VMName).log"  -Message "Checking if VM Tools are installed." -Verbose:$IsVerbose
+
     if ( $VM.Guest.ToolsVersion -ne "" ) {
         Write-Log -Path "$LogPath\$($VMName).log" -Warning -Message "VMTools are installed.  VM did not boot into WINPE_UEFI ISO.`nSkipping." -Verbose:$IsVerbose
     }
     Else {
-        Write-Log -Path "$LogPath\$($VMName).log" -Warning -Message "VMTools are NOT installed.  Assuming VM has booted to UEFI Conversion ISO." -Verbose:$IsVerbose
+        Write-Log -Path "$LogPath\$($VMName).log" -Warning -Message "VMTools are NOT installed.  Assuming VM has booted to UEFI Conversion ISO.`nContinuing UEFI Conversion." -Verbose:$IsVerbose
 
         $VM = Get-vm -name $VMName
 
@@ -220,108 +172,14 @@ foreach ($VMName in $ServerNames ) {
         $vm.ExtensionData.ReconfigVM($spec)
     }
 
-
-
     # ----- Cleanup
     Write-Log -Path "$LogPath\$($VMName).log"  -Message "Cleanup" -Verbose:$IsVerbose
-
-#    # ----- remove temp boot order
-#        # ----- Gather VM info we will need
-#        $VM = Get-VM -Name $VMName
-#
-#        $VMXPath = $VM.ExtensionData.Config.Files.VmPathName
-#        $VMXDS = Get-Datastore $VMXPath.split(' ')[0].trim('[',']')
-#        $VMXName = $VMXPath.split(' ')[1].Replace( '/','\')
-#        $Folder = $VM.Folder
-#
-#        # ----- If VM is in resouce pool use that otherwise just use the cluster as the resource
-#        if ( $($VM.ResourcePool) ) {
-#            $ResourcePool = $VM.ResourcePool
-#        }
-#        Else {
-#            $ResourcePool = (Get-Cluster -VM $VM).Name
-#        }
-#
-#        # ----- It seems that when you change the Bootoptions via PowerCLI, it also changes the BIOS order.  And removing the BootOrder from the VMX does not set the order back.  SO setting it with Powerclie and then clearing
-#
-#        $spec = New-Object VMware.Vim.VirtualMachineConfigSpec
-#
-#        $BootOptions = New-Object VMware.Vim.VirtualMachineBootOptions
-#
-#        $BootableCDRom = New-Object -Type VMware.Vim.VirtualMachineBootOptionsBootableCdromDevice
-#
-#        $HDiskDeviceName = "Hard disk 1"
-#        $HDiskDeviceKey = ($vm.ExtensionData.Config.Hardware.Device | ?{$_.DeviceInfo.Label -eq $HDiskDeviceName}).Key
-#        $BootableHDisk = New-Object -TypeName VMware.Vim.VirtualMachineBootOptionsBootableDiskDevice -Property @{"DeviceKey" = $HDiskDeviceKey}
-#
-#        $BootOrder = $BootableCDRom
-#
-#        $BootOptions.BootOrder = $BootableHDisk,$BootOrder
-#
-#        $Spec.BootOptions = $BootOptions
-#
-#        $VM.ExtensionData.reconfigvm( $Spec )
-#
-#        # ----- Remove and Reregister so VMX changes happen
-#        Remove-Inventory -Item $VM -Confirm:$False
-#
-#        # ----- Register VM (use clustername as the default resourcepool)
-#        $VM = New-VM -VMFilePath $VMXPath -Location $Folder -ResourcePool $ResourcePool
-#
-#        # ----- Apparently the settings don't change unless the VM boots.  Booting and shuting down
-#        Start-VM -VM $VM 
-#        Wait-Tools -vm $VM
-#
-#        Shutdown-VMGuest -vm $VM -Confirm:$False 
-#
-#        $VM = Get-VM -Name $VMName
-#
-#        # ----- Wait for VM to be powered off.
-#        Write-Output "Waiting until the VM is in a PoweredOff State prior to changing boot order"
-#        while ( $VM.PowerState -ne 'PoweredOff' ) {
-#            Start-Sleep -s 5
-#            Write-Output "Powerstate = $($VM.Powerstate)"
-#            $VM = Get-VM -Name $VMName
-#        }
-#
-#
-#
-#
-#        # ----- Clearing Bios.bootORder from VMX
-#
-#        # ----- Editing the VMX to be safe unregister VM
-#        Remove-Inventory -Item $VM -Confirm:$False
-#
-#        # ----- Copy locally to edit and rename as backup
-#        Copy-DatastoreItem  -Item "$($VMXDS.DatastoreBrowserPath)\$VMXName" -Destination c:\temp\$($VMName).vmx.old
-#
-#        # ----- Renaming to .old as backup
-#        #Rename-Item c:\temp\$($VMName).vmx -NewName c:\temp\$($VMName).vmx.old
-#
-#        Get-Content -Path c:\temp\$($VMName).vmx.old | Select-String -Pattern bios.bootOrder -NotMatch | Set-Content -Path c:\temp\$($VMName).vmx
-#
-#
-#        # ----- back to datastore and register VM
-#        Copy-DatastoreItem -Item c:\temp\$($VMName).vmx -Destination "$($VMXDS.DatastoreBrowserPath)\$VMXName"
-#
-#        # ----- Register VM (use clustername as the default resourcepool)
-#        $VM = New-VM -VMFilePath $VMXPath -Location $Folder -ResourcePool $ResourcePool 
-#
-#   #     $spec = New-Object VMware.Vim.VirtualMachineConfigSpec 
-#   #     $Spec.BootOPtions = New-Object VMware.Vim.VirtualMachineBootOptions 
-#   #     $SPec.BootOptions.BootOrder = $Null
-#   #
-#   #     ## reconfig the VM to use the spec with the new BootOrder
-#   #     $vm.ExtensionData.ReconfigVM_Task($spec)
-
+    
     Write-Log -Path "$LogPath\$($VMName).log"  -Message "Removing ISO from VM." -Verbose:$IsVerbose
 
     # ----- Running into connection closed errors when piping.  so split this into two lines.
     $CD = Get-CDDrive -VM $VM 
     Set-CDDrive -CD $CD -NoMedia -Confirm:$False
-
- #   Start-VM -VM $VM
-
 }
 
 
@@ -330,3 +188,6 @@ Disconnect-VIServer -Confirm:$False
 #
 ## ----- Remove the snapshot?
 ##Get-Snapshot -VM $VM -Name "Pre UEFI Conversion*" | Remove-Snapshot
+
+
+$VerbosePreference = $OldVerbosePref
