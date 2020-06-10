@@ -3,13 +3,52 @@
 
 
 
-$LogPath = 'c:\temp'       #'\\10.137.8.9\UEFIConvertLogs'
+#$LogPath = 'c:\temp'       #'\\10.137.8.9\UEFIConvertLogs'
 $LogPath = '\\192.168.1.166\source'
 $ISO = '[LocalHDD] ISO/Windows/WINPE_UEFI.iso'      #"[ISO] Utilitiy/WINPE_UEFI.iso"
 $Key = (3,4,2,3,56,34,254,222,1,1,2,23,42,54,33,233,1,34,2,7,6,5,35,43)
 $VCenter = '192.168.1.16'            #    'CDF2-VCA-01'
 
+$TimeoutOS = 120
+$TimeoutWINPE = 900
 
+
+# ------------------------------------------------------------------------------------
+
+Function Wait-VMState {
+
+    [CmdletBinding()]
+    Param ( 
+        [VMware.VimAutomation.ViCore.Impl.V1.VM.UniversalVirtualMachineImpl]$VM,
+
+        [Switch]$PoweredOff,
+
+        [Int]$TimeOutSeconds = 1800
+    )
+    
+    $Timer =  [system.diagnostics.stopwatch]::StartNew()
+
+    if ( $PoweredOff ) { $State = 'PoweredOff' }
+
+    Write-Verbose "Waiting for VM status to be $State"
+
+    while ( $VM.PowerState -ne $State ) {
+        Start-Sleep -s 5
+        Write-Verbose "$($Timer.Elapsed.TotalSeconds) : Powerstate = $($VM.Powerstate)"
+        $VM = Get-VM -Name $VM.Name -Verbose:$False
+
+        # ----- Because it is possible $TimeoutOS was not long enough and the VM actually booted into a reall OS we need to check and Fail out of loop if a real OS is detected
+        if ( $Timer.Elapsed.TotalSeconds -gt $TimeOutSeconds ) { 
+            Write-Output "TimeOut" 
+            Return
+        }
+    }
+
+    Write-Output 'True'
+}
+
+
+# ------------------------------------------------------------------------------------
 
 # ----- Dot source write-log
 . $PSScriptRoot\write-log.ps1
@@ -53,8 +92,7 @@ $ServerNames = 'kw-test'
 
 
 foreach ($VMName in $ServerNames ) {
-    Write-Log -Path "$LogPath\$($VMName).log" -Message "Converting $VMName ------------------------------------" -Verbose:$IsVerbose
-    
+    Write-Log -Path "$LogPath\$($VMName).log" -Message "Converting $VMName ------------------------------------" -Verbose:$IsVerbose 
 
     $VM = Get-VM -Name $VMName
 
@@ -116,48 +154,36 @@ foreach ($VMName in $ServerNames ) {
 
     # ----- Wait for VM to powerdown and...
     Write-Log -Path "$LogPath\$($VMName).log"  -Message "Waiting until the VM is in a PoweredOff State" -Verbose:$IsVerbose
-    while ( $VM.PowerState -ne 'PoweredOff' ) {
-        Start-Sleep -s 5
-        Write-Output "Powerstate = $($VM.Powerstate)"
-        $VM = Get-VM -Name $VMName
-    }
+    $Result = Wait-VMState -VM $VM -PoweredOff -Verbose:$IsVerbose
 
     Start-Sleep -s 30
 
     Write-Log -Path "$LogPath\$($VMName).log"  -Message "Starting VM." -Verbose:$IsVerbose
+    
+    # ----- So the question is how do you know when a VM booting into WINPE has finished booting.  No vm tools installed, no psremoting.  Only thing I can think of at this point,
+    # ----- is to wait a specific amount of time and then check the VM object for an OS.  If no OS listed then it has not booted to WINPE.  
+    
     Start-VM -VM $VM
 
-    # ----- restart VM to poweron.
-    Write-Log -Path "$LogPath\$($VMName).log"  -Message "Waiting to VM to poweron" -Verbose:$IsVerbose
+    Write-Log -Path "$LogPath\$($VMName).log"  -Message "Waiting for VM to poweron" -Verbose:$IsVerbose
 
-    $VM = Get-vm -name $VMName
-
-    $VM.Guest | FL *
-
-    while ( $VM.PowerState -ne 'PoweredOn' ) {
-        Start-Sleep -s 5
-        Write-Output "Powerstate = $($VM.Powerstate)"
-        $VM = Get-VM -Name $VMName
-    }
+    Start-Sleep -Seconds $TimeoutOS
 
     # ----- Check if VMTools installed.
     Write-Log -Path "$LogPath\$($VMName).log"  -Message "Checking if VM Tools are installed." -Verbose:$IsVerbose
 
-    if ( $VM.Guest.ToolsVersion -ne "" ) {
-        Write-Log -Path "$LogPath\$($VMName).log" -Warning -Message "VMTools are installed.  VM did not boot into WINPE_UEFI ISO.`nSkipping." -Verbose:$IsVerbose
+    $VM = Get-VM -Name $VMName
+
+    if ( $VM.Guest.OSFullName -ne $Null ) {
+        Write-Log -Path "$LogPath\$($VMName).log" -Warning -Message "OS is $($VM.Guest.OSFUllName).  VM did not boot into WINPE_UEFI ISO.`nSkipping." -Verbose:$IsVerbose
     }
     Else {
-        Write-Log -Path "$LogPath\$($VMName).log" -Warning -Message "VMTools are NOT installed.  Assuming VM has booted to UEFI Conversion ISO.`nContinuing UEFI Conversion." -Verbose:$IsVerbose
+        Write-Log -Path "$LogPath\$($VMName).log" -Message "OS fullname is blank. Assuming VM has booted to UEFI Conversion ISO.`nContinuing UEFI Conversion." -Verbose:$IsVerbose
 
         $VM = Get-vm -name $VMName
 
         # ----- Wait for VM to boot in WINPE and then stop.
-        Write-Log -Path "$LogPath\$($VMName).log"  -Message "Waiting until the VM is in a PoweredOff State" -Verbose:$IsVerbose
-        while ( $VM.PowerState -ne 'PoweredOff' ) {
-            Start-Sleep -s 5
-            Write-Output "Powerstate = $($VM.Powerstate)"
-            $VM = Get-VM -Name $VMName
-        }
+        if ( (Wait-VMState -VM $VM -TimeOutSeconds $TimeoutWINPE -PoweredOff) -eq 'TimeOut' ) { Continue }
 
         # ----- Check log file for success
         if ( -Not ( Get-Content -Path "$LogPath\$($VMName).log" | Select-String "Success : Conversion Complete" ) ) {
@@ -181,7 +207,6 @@ foreach ($VMName in $ServerNames ) {
     $CD = Get-CDDrive -VM $VM 
     Set-CDDrive -CD $CD -NoMedia -Confirm:$False
 }
-
 
 Disconnect-VIServer -Confirm:$False
 
