@@ -3,17 +3,24 @@
 
 $Key = (3,4,2,3,56,34,254,222,1,1,2,23,42,54,33,233,1,34,2,7,6,5,35,43)
 
+# ----- Get the VM's bootable C: drive (note, this is not the c: drive in WINPE)
+# ----- Find the system disk
+$SystemDisk = Get-Disk | where BootFromDisk
+
+# ----- get the partition where the size is larger than 500 MB.  This should eliminate the 'utility' partition 
+$Drive = Get-Partition -DiskNumber $SystemDisk.Number | Where Size -gt 524288000 | Select-Object -ExpandProperty DriveLetter
+
 # ----- Retrieve parameters
 Try {
 
-    $Data = Import-Csv -Path D:\WINPEInput.csv -ErrorAction Stop
+    $Data = Import-Csv -Path "$($Drive):\WINPEInput.csv" -ErrorAction Stop
 }
 Catch {
     $ExceptionMessage = $_.Exception.Message
     $ExceptionType = $_.Exception.GetType().Fullname
     
     #Write-log -Path "$($Data.Logpath)\$($Data.Name).log" -Throw -Message "There was a problem retrieving the WINPEInput CSV from the local drive.`n`n     $ExceptionMessage`n`n $ExceptionType"
-    Write-log -Path "D:\UEFIConversionFailed.log" -Throw -Message "There was a problem retrieving the WINPEInput CSV from the local drive.`n`n     $ExceptionMessage`n`n $ExceptionType" -Verbose
+    Write-log -Path "$($Drive):\UEFIConversionFailed.log" -Throw -Message "There was a problem retrieving the WINPEInput CSV from the local drive.`n`n     $ExceptionMessage`n`n $ExceptionType" -Verbose
 
 
     # ----- Shut Down VM
@@ -31,7 +38,7 @@ Catch {
     $ExceptionType = $_.Exception.GetType().Fullname
     
     #Write-log -Path "$($Data.Logpath)\$($Data.Name).log" -Throw -Message "There was a problem retrieving the WINPEInput CSV from the local drive.`n`n     $ExceptionMessage`n`n $ExceptionType"
-    Write-log -Path "D:\UEFIConversionFailed.log" -Throw -Message "Failed to map to the network share: $($Data.LogPath).`n`n     $ExceptionMessage`n`n $ExceptionType" -Verbose
+    Write-log -Path "$($Drive):\UEFIConversionFailed.log" -Throw -Message "Failed to map to the network share: $($Data.LogPath).`n`n     $ExceptionMessage`n`n $ExceptionType" -Verbose
 
 
     # ----- Shut Down VM
@@ -40,9 +47,6 @@ Catch {
 
 
 Write-log -Path "J:\$($Data.Name).log" -Message "WINPEInput VMName = $($Data.Name); Logpath = $($Data.LogPath)" -Verbose
-
-# ----- Find the system disk
-$SystemDisk = Get-Disk | where BootFromDisk
 
 Write-Log -Path "J:\$($Data.Name).log" -Message "System disk is disk: $($SystemDisk.Number)" -Verbose
 
@@ -74,7 +78,10 @@ if ($LastExitCode -ne 0) {
 
 Write-Log -Path "J:\$($Data.Name).log" -Message "Success : Conversion Complete.`n`n$Result" -Verbose
 
-Write-output "Shutting down"
+Write-Log -Path "J:\$($Data.Name).log" -Message "Removing Config file.`n`n$Result" -Verbose
+Remove-Item -Path "$($Drive):\WINPEInput.csv" -Confirm:$False -Force
+
+Write-Log -Path "J:\$($Data.Name).log" -Message "Shutting Down.`n`n$Result" -Verbose
 
 # ----- Shut Down VM
 Stop-Computer -Force -Verbose
