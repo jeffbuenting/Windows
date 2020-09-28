@@ -3,8 +3,10 @@
 
 
 
-$LogPath = 'c:\temp'       #'\\10.137.8.9\UEFIConvertLogs'
-#$LogPath = '\\192.168.1.166\source'
+
+
+$LogPath = '\\192.168.1.166\source'       #'\\10.137.8.9\UEFIConvertLogs'
+
 $ISO = '[LocalHDD] ISO/Windows/WINPE_UEFI.iso'      #"[ISO] Utilitiy/WINPE_UEFI.iso"
 $Key = (3,4,2,3,56,34,254,222,1,1,2,23,42,54,33,233,1,34,2,7,6,5,35,43)
 $VCenter = '192.168.1.16'            #    'CDF2-VCA-01'
@@ -68,9 +70,12 @@ Else {
 }
 
 #$Cred = Get-Credential
-$VcenterCred = Get-Credential -Message "vCenter User"
-$ShareCred = Get-Credential -Message "User with access to shared drive for logs"
-$ServerAdmin = Get-Credential -Message "Server Admin"
+#$VcenterCred = Get-Credential -Message "vCenter User"
+#$ShareCred = Get-Credential -Message "User with access to shared drive for logs"
+#$ServerAdmin = Get-Credential -Message "Server Admin"
+
+
+    $VM = Get-VM -Name $VMName
 
 
 Try {
@@ -143,6 +148,63 @@ foreach ($VMName in $ServerNames ) {
     }
 
 
+    # ----- VM must be Powered off to change boot order
+    Write-Log -Path "$LogPath\$($VMName).log"  -Message "Shutting down the VM" -Verbose:$IsVerbose
+
+    Shutdown-VMGuest -VM $VM -Confirm:$False
+
+    $VM = Get-VM -Name $VMName
+
+    # ----- Wait for VM to be powered off.
+
+    Write-Log -Path "$LogPath\$($VMName).log"  -Message "Waiting until the VM is in a PoweredOff State prior to changing boot order" -Verbose:$IsVerbose
+
+    while ( $VM.PowerState -ne 'PoweredOff' ) {
+        Start-Sleep -s 5
+        Write-Output "Powerstate = $($VM.Powerstate)"
+        $VM = Get-VM -Name $VMName
+    }
+
+    # ----- Configure VM to Boot from WINPEUIFIConvertion ISO
+
+        Write-Log -Path "$LogPath\$($VMName).log"  -Message "Setting CDRom as only boot option" -Verbose:$IsVerbose
+
+        # ----- Capture info needed to register vm
+        $VMXPath = $VM.ExtensionData.Config.Files.VmPathName
+        $Folder = $VM.Folder
+        if ( $($VM.ResourcePool) ) {
+            $ResourcePool = $VM.ResourcePool
+        }
+        Else {
+            $ResourcePool = (Get-Cluster -VM $VM).Name
+        }
+
+
+        # ----- Set CDROM as first boot
+        $spec = New-Object VMware.Vim.VirtualMachineConfigSpec
+
+        $BootOptions = New-Object VMware.Vim.VirtualMachineBootOptions
+
+        $BootableCDRom = New-Object -Type VMware.Vim.VirtualMachineBootOptionsBootableCdromDevice
+
+        #$HDiskDeviceName = "Hard disk 1"
+        #$HDiskDeviceKey = ($vm.ExtensionData.Config.Hardware.Device | ?{$_.DeviceInfo.Label -eq $HDiskDeviceName}).Key
+        #$BootableHDisk = New-Object -TypeName VMware.Vim.VirtualMachineBootOptionsBootableDiskDevice -Property @{"DeviceKey" = $HDiskDeviceKey}
+
+        $BootOrder = $BootableCDRom
+
+        $BootOptions.BootOrder = $BootOrder
+
+        $Spec.BootOptions = $BootOptions
+
+        $VM.ExtensionData.reconfigvm( $Spec )
+
+        # ----- Remove and Reregister so VMX changes happen
+        Remove-Inventory -Item $VM -Confirm:$False
+
+        # ----- Register VM (use clustername as the default resourcepool)
+        $VM = New-VM -VMFilePath $VMXPath -Location $Folder -ResourcePool $ResourcePool
+
 
     # ----- Restart and boot to ISO
     Write-Log -Path "$LogPath\$($VMName).log"  -Message "Restarting VM." -Verbose:$IsVerbose
@@ -154,7 +216,9 @@ foreach ($VMName in $ServerNames ) {
 
     # ----- Wait for VM to powerdown and...
     Write-Log -Path "$LogPath\$($VMName).log"  -Message "Waiting until the VM is in a PoweredOff State" -Verbose:$IsVerbose
+
     $Result = Wait-VMState -VM $VM -PoweredOff -Verbose:$IsVerbose
+
 
     Start-Sleep -s 30
 
@@ -209,6 +273,7 @@ foreach ($VMName in $ServerNames ) {
 }
 
 Disconnect-VIServer -Confirm:$False
+
 
 #
 ## ----- Remove the snapshot?

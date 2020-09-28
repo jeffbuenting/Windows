@@ -33,7 +33,9 @@ copy -Path $Source\mbr2gpt.exe -Destination $WINPEPath\mount\Scripts\MBR2GPT.EXE
 
 # ----- Modify the start up to auto run the powershell script
 $Start = Get-Content $WINPEPath\mount\Windows\System32\startnet.cmd
+
 $Start += "`nWpeutil disablefirewall"
+
 $Start += "`nPowershell -executionpolicy bypass -file x:\scripts\ConvertTo-UEFI.ps1"
 $Start | Set-Content $WINPEPath\mount\Windows\System32\startnet.cmd
 
