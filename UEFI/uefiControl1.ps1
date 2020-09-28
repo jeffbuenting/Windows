@@ -1,18 +1,25 @@
 ﻿# ----- Script to configure VM and boot it via WINPE to convert from Legacy BIOS to UEFI
 
+# ----- setting verbose to display on screen
+$ExistingVerbose = $VerbosePreference
+$VerbosePreference = 'Continue'
 
 
 
-
-
-$LogPath = '\\192.168.1.166\source'       #'\\10.137.8.9\UEFIConvertLogs'
-
-$ISO = '[LocalHDD] ISO/Windows/WINPE_UEFI.iso'      #"[ISO] Utilitiy/WINPE_UEFI.iso"
+$LogPath = '\\10.137.8.9\UEFIConvertLogs'
+$ISO = "[ISO] Utilitiy/WINPE_UEFI_Mine.iso"
 $Key = (3,4,2,3,56,34,254,222,1,1,2,23,42,54,33,233,1,34,2,7,6,5,35,43)
-$VCenter = '192.168.1.16'            #    'CDF2-VCA-01'
+$VCenter = 'CDF2-VCA-01'
+$ConfigOU = 'CN=Configuration,DC=CDF2,DC=usae,DC=bah,DC=com'
 
+# ----- Timeout for booting into OS.
 $TimeoutOS = 120
+
+# ----- Timeout waiting for WINPE to shutdown
 $TimeoutWINPE = 900
+
+#$ServerNames = Get-ADComputer -Filter * -Properties OperatingSystem | where OperatingSystem -like "Windows Server*" | Select-object Name,OperatingSystem | Sort-Object Name | Out-GridView -Title "Select machines to convert to UEFI" -PassThru | Select-Object -ExpandProperty Name
+$ServerNames = 'REM-WEB-02'
 
 
 # ------------------------------------------------------------------------------------
@@ -52,6 +59,7 @@ Function Wait-VMState {
 
 # ------------------------------------------------------------------------------------
 
+
 # ----- Dot source write-log
 . $PSScriptRoot\write-log.ps1
 #. C:\Scripts\Windows\UEFI\Write-Log.ps1
@@ -59,7 +67,6 @@ Function Wait-VMState {
 # ----- Turn on Verbose.
 $OldVerbosePref = $VerbosePreference
 $VerbosePreference = 'Continue'
-
 
 # ----- Set IsVerbose
 if ( $VerbosePreference -eq 'Continue' ) {
@@ -69,14 +76,10 @@ Else {
     $IsVerbose = $False
 }
 
-#$Cred = Get-Credential
-#$VcenterCred = Get-Credential -Message "vCenter User"
-#$ShareCred = Get-Credential -Message "User with access to shared drive for logs"
-#$ServerAdmin = Get-Credential -Message "Server Admin"
-
-
-    $VM = Get-VM -Name $VMName
-
+$Cred = Get-Credential
+$VcenterCred = $Cred # Get-Credential -Message "vCenter User"
+$ShareCred = $Cred # Get-Credential -Message "User with access to shared drive for logs"
+$ServerAdmin = Get-Credential -Message "Server Admin"
 
 Try {
     # ----- Because we don't know if the VCSA is using self signed certs or not.
@@ -90,11 +93,8 @@ Catch {
     Throw  "Error connecting to vCenter.`n`n     $ExceptionMessage`n`n $ExceptionType"
 }
 
-
-#$ServerNames = Get-ADComputer -Filter * -Properties OperatingSystem | where OperatingSystem -like "Windows Server*" | Select-object Name,OperatingSystem | Sort-Object Name | Out-GridView -Title "Select machines to convert to UEFI" -PassThru | Select-Object -ExpandProperty Name
-$ServerNames = 'kw-test'
- #'CDF2-Test-WS16'
-
+# ----- Find the DHCPServer
+$DHCPServer = Get-ADObject -SearchBase $ConfigOU -Filter "objectclass -eq 'dhcpclass' -AND Name -ne 'dhcproot'" | select -expandproperty name
 
 foreach ($VMName in $ServerNames ) {
     Write-Log -Path "$LogPath\$($VMName).log" -Message "Converting $VMName ------------------------------------" -Verbose:$IsVerbose 
@@ -130,7 +130,7 @@ foreach ($VMName in $ServerNames ) {
     }
 
      Write-Log -Path "$LogPath\$($VMName).log" -Message "Copy WINPE Script config to J:" -Verbose:$IsVerbose
-  #  [PSCustomObject]@{Name = $VMName; LogPath = $LogPath; UserName = $ShareCred.UserName; PW = ($ShareCred.Password | ConvertFrom-SecureString -Key $Key )} | Export-csv -Path  J:\WINPEInput.csv -NoTypeInformation
+    [PSCustomObject]@{Name = $VMName; LogPath = $LogPath; UserName = $ShareCred.UserName; PW = ($ShareCred.Password | ConvertFrom-SecureString -Key $Key )} | Export-csv -Path  J:\WINPEInput.csv -NoTypeInformation
 
 
     # ----- Remove the J drive now that we no longer need it
@@ -148,77 +148,18 @@ foreach ($VMName in $ServerNames ) {
     }
 
 
-    # ----- VM must be Powered off to change boot order
-    Write-Log -Path "$LogPath\$($VMName).log"  -Message "Shutting down the VM" -Verbose:$IsVerbose
-
-    Shutdown-VMGuest -VM $VM -Confirm:$False
-
-    $VM = Get-VM -Name $VMName
-
-    # ----- Wait for VM to be powered off.
-
-    Write-Log -Path "$LogPath\$($VMName).log"  -Message "Waiting until the VM is in a PoweredOff State prior to changing boot order" -Verbose:$IsVerbose
-
-    while ( $VM.PowerState -ne 'PoweredOff' ) {
-        Start-Sleep -s 5
-        Write-Output "Powerstate = $($VM.Powerstate)"
-        $VM = Get-VM -Name $VMName
-    }
-
-    # ----- Configure VM to Boot from WINPEUIFIConvertion ISO
-
-        Write-Log -Path "$LogPath\$($VMName).log"  -Message "Setting CDRom as only boot option" -Verbose:$IsVerbose
-
-        # ----- Capture info needed to register vm
-        $VMXPath = $VM.ExtensionData.Config.Files.VmPathName
-        $Folder = $VM.Folder
-        if ( $($VM.ResourcePool) ) {
-            $ResourcePool = $VM.ResourcePool
-        }
-        Else {
-            $ResourcePool = (Get-Cluster -VM $VM).Name
-        }
-
-
-        # ----- Set CDROM as first boot
-        $spec = New-Object VMware.Vim.VirtualMachineConfigSpec
-
-        $BootOptions = New-Object VMware.Vim.VirtualMachineBootOptions
-
-        $BootableCDRom = New-Object -Type VMware.Vim.VirtualMachineBootOptionsBootableCdromDevice
-
-        #$HDiskDeviceName = "Hard disk 1"
-        #$HDiskDeviceKey = ($vm.ExtensionData.Config.Hardware.Device | ?{$_.DeviceInfo.Label -eq $HDiskDeviceName}).Key
-        #$BootableHDisk = New-Object -TypeName VMware.Vim.VirtualMachineBootOptionsBootableDiskDevice -Property @{"DeviceKey" = $HDiskDeviceKey}
-
-        $BootOrder = $BootableCDRom
-
-        $BootOptions.BootOrder = $BootOrder
-
-        $Spec.BootOptions = $BootOptions
-
-        $VM.ExtensionData.reconfigvm( $Spec )
-
-        # ----- Remove and Reregister so VMX changes happen
-        Remove-Inventory -Item $VM -Confirm:$False
-
-        # ----- Register VM (use clustername as the default resourcepool)
-        $VM = New-VM -VMFilePath $VMXPath -Location $Folder -ResourcePool $ResourcePool
-
 
     # ----- Restart and boot to ISO
     Write-Log -Path "$LogPath\$($VMName).log"  -Message "Restarting VM." -Verbose:$IsVerbose
 
     # ----- Restarting VM OS.  I can't figure out how to monitor when a reboot is complete (without vmtools) so I separated this into two operations
-    Shutdown-VMGuest -VM $VM -Confirm:$False
+    Shutdown-VMGuest -VM $VM -Confirm:$False 
 
     $VM = Get-vm -name $VMName
 
     # ----- Wait for VM to powerdown and...
     Write-Log -Path "$LogPath\$($VMName).log"  -Message "Waiting until the VM is in a PoweredOff State" -Verbose:$IsVerbose
-
     $Result = Wait-VMState -VM $VM -PoweredOff -Verbose:$IsVerbose
-
 
     Start-Sleep -s 30
 
@@ -231,23 +172,61 @@ foreach ($VMName in $ServerNames ) {
 
     Write-Log -Path "$LogPath\$($VMName).log"  -Message "Waiting for VM to poweron" -Verbose:$IsVerbose
 
-    Start-Sleep -Seconds $TimeoutOS
+    # ----- Wait for VM to finish booting
+#    Start-Sleep -Seconds $TimeoutOS
+    
+    # ----- Get VM's MAC
+    Write-Log -Path "$LogPath\$($VMName).log"  -Message "Getting VM's MAC address." -Verbose:$IsVerbose
+    
+    $MAC = $VM | Get-NetworkAdapter | Select-Object -ExpandProperty MACAddress
 
-    # ----- Check if VMTools installed.
-    Write-Log -Path "$LogPath\$($VMName).log"  -Message "Checking if VM Tools are installed." -Verbose:$IsVerbose
+    # ----- Loop until VM is pingable
+    $PingWINPE = $False
+    $PingOS = $False
+    Try {
+        Do {
+            # ----- Checking to see if DHCP has assigned IP to VM's mac
+            Write-Log -Path "$LogPath\$($VMName).log"  -Message "Checking DHCP for IP mapped to MAC: $MAC" -Verbose:$IsVerbose
+
+            $IPAddress = ( Get-DhcpServerv4Scope -ComputerName $DHCPServer -ErrorAction Stop | foreach {Get-DhcpServerv4Lease -computername $DHCPServer -allleases -ScopeId ($_.ScopeId) -ErrorAction Stop  } | where clientid -match $MAC.Replace(':','-') ).IPAddress.IPAddressToString
+
+            Write-Log -Path "$LogPath\$($VMName).log"  -Message "IPAddress = $IPAddress" -Verbose:$IsVerbose
+        
+            $PingWINPE = Test-Connection -ComputerName $IPAddress -Count 1 -Quiet -ErrorAction SilentlyContinue
+            $PingOS = Test-Connection -ComputerName $VMIP -Count 1 -Quiet -ErrorAction SilentlyContinue
+
+
+        } Until ( $PingWINPE -Or $PingOS ) 
+    }
+    Catch {
+        $ExceptionMessage = $_.Exception.Message
+        $ExceptionType = $_.Exception.GetType().Fullname
+        Write-Log -Path "$LogPath\$($VMName).log" -Throw -Message "Error getting the DHCP info.  Possibly need to run as Admin.`n`n     $ExceptionMessage`n`n $ExceptionType" -Verbose:$IsVerbose
+    }
+
+
+
+    # ----- Check if regular OS installed.
+    Write-Log -Path "$LogPath\$($VMName).log"  -Message "Checking if regular OS is installed." -Verbose:$IsVerbose
 
     $VM = Get-VM -Name $VMName
 
     if ( $VM.Guest.OSFullName -ne $Null ) {
+ #   if ( $PingOS ) {
         Write-Log -Path "$LogPath\$($VMName).log" -Warning -Message "OS is $($VM.Guest.OSFUllName).  VM did not boot into WINPE_UEFI ISO.`nSkipping." -Verbose:$IsVerbose
+ #       Write-Log -Path "$LogPath\$($VMName).log" -Warning -Message "Pinged OS IP.  VM did not boot into WINPE_UEFI ISO.`nSkipping." -Verbose:$IsVerbose
     }
     Else {
         Write-Log -Path "$LogPath\$($VMName).log" -Message "OS fullname is blank. Assuming VM has booted to UEFI Conversion ISO.`nContinuing UEFI Conversion." -Verbose:$IsVerbose
+ #       Write-Log -Path "$LogPath\$($VMName).log" -Message "Pinged DHCP IP. Assuming VM has booted to UEFI Conversion ISO.`nContinuing UEFI Conversion." -Verbose:$IsVerbose
 
         $VM = Get-vm -name $VMName
 
         # ----- Wait for VM to boot in WINPE and then stop.
-        if ( (Wait-VMState -VM $VM -TimeOutSeconds $TimeoutWINPE -PoweredOff) -eq 'TimeOut' ) { Continue }
+        if ( (Wait-VMState -VM $VM -TimeOutSeconds $TimeoutWINPE -PoweredOff) -eq 'TimeOut' ) { 
+            Write-Log -Path "$LogPath\$($VMName).log" -Message "There was a problem with the WINPE boot or the Convertion Script.  Check the log." -Verbose:$IsVerbose
+            Continue 
+        }
 
         # ----- Check log file for success
         if ( -Not ( Get-Content -Path "$LogPath\$($VMName).log" | Select-String "Success : Conversion Complete" ) ) {
@@ -270,10 +249,31 @@ foreach ($VMName in $ServerNames ) {
     # ----- Running into connection closed errors when piping.  so split this into two lines.
     $CD = Get-CDDrive -VM $VM 
     Set-CDDrive -CD $CD -NoMedia -Confirm:$False
+
+    Start-VM -VM $VM
+
+    # ----- Remove config file from VM
+#    Write-Log -Path "$LogPath\$($VMName).log" -Message "Mapping J to VM c$ so we can remove the config file" -Verbose:$IsVerbose
+#    Try { 
+#        Write-Log -Path "$LogPath\$($VMName).log" -Message "Mapping J to VM c$" -Verbose:$IsVerbose
+#        New-PSDrive -Name "J" -Root \\$VMIP\c$ -PSProvider FileSystem -Credential $ServerAdmin -ErrorAction Stop | Write-Log -Path "$LogPath\$($VMName).log" -Verbose:$IsVerbose
+#    }
+#    Catch {
+#        $ExceptionMessage = $_.Exception.Message
+#        $ExceptionType = $_.Exception.GetType().Fullname
+#    
+#        Write-Log -Path "$LogPath\$($VMName).log" -Throw -Message "Failed to map to the admin share \\$VMIP\c$ on $VMName.`n`n     $ExceptionMessage`n`n $ExceptionType" -Verbose:$IsVerbose
+#
+#    }
+#
+#    Write-Log -Path "$LogPath\$($VMName).log" -Message "removing J:\WINPEInput.csv" -Verbose:$IsVerbose
+#    Remove-Item J:\WINPEInput.csv -Force
+#
+#    # ----- Remove the J drive now that we no longer need it
+#    Remove-PSDrive -Name 'J'
 }
 
 Disconnect-VIServer -Confirm:$False
-
 
 #
 ## ----- Remove the snapshot?
