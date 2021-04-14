@@ -1,0 +1,23 @@
+On Error Resume Next
+
+Set objVS = CreateObject("VirtualServer.Application")
+Set objVM = objVS.FindVirtualMachine("Windows 2000 Server")
+
+Set objGuestOS = objVM.GuestOS
+objGuestOS.InstallAdditions()
+
+
+---------
+
+List 
+
+Get-VMMServer "vbas0053"
+
+$vs=get-vm | format-table Name
+$vs
+
+
+----------------
+
+
+$vs = Get-VM | where {$_.State -eq 'Running'} | where {$_.HostName -eq 'vbvs9001.vbgov.com' } | format-table Name, HostName, Status
