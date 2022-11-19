@@ -21,6 +21,12 @@ Catch {
     Throw "Error retrieving audio devices.`n`n     $ExceptionMessage`n`n $ExceptionType"
 }
 
+Write-Output "Playback Device:"
+$Playback.Name
+
+Write-Output "Recording Device:"
+$Recording.Name
+
 if ( $Playback.Name -ne $DefaultPlayback ) {
     $Ans = New-Popup -Message "There is an error with the Playback device ($($Playback.Name)).  Need to manually remediate." -Title "Playback Error" 
 }
