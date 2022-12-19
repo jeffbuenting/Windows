@@ -1,4 +1,4 @@
-# $ServerList = "KCDCUTIL01"
+
 
 # foreach ( $S in $ServerList ) {
 #     Write-Verbose "Updating Server: $S"
